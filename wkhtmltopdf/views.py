@@ -7,6 +7,7 @@ from django.http import HttpResponse
 from django.template.response import TemplateResponse
 from django.utils.encoding import smart_str
 from django.views.generic import TemplateView
+from django.utils import six
 
 from .utils import (content_disposition_filename, make_absolute_paths,
     wkhtmltopdf)
@@ -74,12 +75,18 @@ class PDFTemplateResponse(TemplateResponse, PDFResponse):
 
         context = self.resolve_context(self.context_data)
 
-        content = smart_str(template.render(context))
+        content = six.b(template.render(context))
         content = make_absolute_paths(content)
 
-        tempfile = NamedTemporaryFile(mode=mode, bufsize=bufsize,
-                                      suffix=suffix, prefix=prefix,
-                                      dir=dir, delete=delete)
+        try:
+            tempfile = NamedTemporaryFile(mode=mode, bufsize=bufsize,
+                                          suffix=suffix, prefix=prefix,
+                                          dir=dir, delete=delete)
+        except TypeError:
+            # Python 3 has 'buffering' arg for 'NamedTemporaryFile' class
+            tempfile = NamedTemporaryFile(mode=mode, buffering=bufsize,
+                                          suffix=suffix, prefix=prefix,
+                                          dir=dir, delete=delete)
 
         try:
             tempfile.write(content)

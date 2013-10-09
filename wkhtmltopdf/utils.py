@@ -5,10 +5,17 @@ from itertools import chain
 import os
 import re
 import sys
-import urllib
-from urlparse import urljoin
+
+try:
+    from urllib import pathname2url
+    from urlparse import urljoin
+except ImportError:
+    # Python 3
+    from urllib.request import pathname2url
+    from urllib.parse import urljoin
 
 from django.conf import settings
+from django.utils import six
 
 from .subprocess import check_output
 
@@ -22,7 +29,7 @@ def _options_to_args(**options):
             continue
         flags.append('--' + name.replace('_', '-'))
         if value is not True:
-            flags.append(unicode(value))
+            flags.append(six.text_type(value))
     return flags
 
 
@@ -56,7 +63,7 @@ def wkhtmltopdf(pages, output=None, **kwargs):
                     orientation='Landscape',
                     disable_javascript=True)
     """
-    if isinstance(pages, basestring):
+    if isinstance(pages, six.string_types):
         # Support a single page.
         pages = [pages]
 
@@ -103,7 +110,7 @@ def content_disposition_filename(filename):
 
     See http://greenbytes.de/tech/tc2231/#attmultinstances for more details.
     """
-    filename = filename.replace(';', '').replace('"', '')
+    filename = filename.replace(b';', b'').replace(b'"', b'')
     return http_quote(filename)
 
 
@@ -113,19 +120,22 @@ def http_quote(string):
     valid ascii charset string you can use in, say, http headers and the
     like.
     """
-    if isinstance(string, unicode):
+    if isinstance(string, six.string_types):
         try:
             import unidecode
             string = unidecode.unidecode(string)
         except ImportError:
             string = string.encode('ascii', 'replace')
     # Wrap in double-quotes for ; , and the like
-    return '"{0!s}"'.format(string.replace('\\', '\\\\').replace('"', '\\"'))
+    string = string.replace(b'\\', b'\\\\').replace(b'"', b'\\"')
+    
+    return '"{0!s}"'.format(string.decode())
 
 
 def pathname2fileurl(pathname):
     """Returns a file:// URL for pathname. Handles OS-specific conversions."""
-    return urljoin('file:', urllib.pathname2url(pathname))
+    join = urljoin('file:', pathname2url(pathname))
+    return six.b(join)
 
 
 def make_absolute_paths(content):
@@ -151,12 +161,11 @@ def make_absolute_paths(content):
         if not x['root'].endswith('/'):
             x['root'] += '/'
 
-        occur_pattern = '''["|']({0}.*?)["|']'''
-        occurences = re.findall(occur_pattern.format(x['url']), content)
+        occur_pattern = '''["|']({0}.*?)["|']'''.format(x['url'])
+        occur_pattern = six.b(occur_pattern)
+        occurences = re.findall(occur_pattern, content)
         occurences = list(set(occurences))  # Remove dups
         for occur in occurences:
-            content = content.replace(occur,
-                                      pathname2fileurl(x['root']) +
-                                      occur[len(x['url']):])
+            content = content.replace(occur, pathname2fileurl(x['root']) + occur[len(x['url']):])
 
     return content
