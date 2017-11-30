@@ -41,7 +41,7 @@ class PDFTemplateResponse(TemplateResponse, PDFResponse):
     def __init__(self, request, template, context=None,
                  status=None, content_type=None, current_app=None,
                  filename=None, show_content_in_browser=None,
-                 header_template=None, footer_template=None,
+                 header_template=None, footer_template=None, background_template=None,
                  cmd_options=None, *args, **kwargs):
 
         super(PDFTemplateResponse, self).__init__(request=request,
@@ -54,6 +54,7 @@ class PDFTemplateResponse(TemplateResponse, PDFResponse):
 
         self.header_template = header_template
         self.footer_template = footer_template
+        self.background_template = background_template
 
         if cmd_options is None:
             cmd_options = {}
@@ -73,6 +74,7 @@ class PDFTemplateResponse(TemplateResponse, PDFResponse):
             self.resolve_template(self.template_name),
             self.resolve_template(self.header_template),
             self.resolve_template(self.footer_template),
+            self.resolve_template(self.background_template),
             context=self.resolve_context(self.context_data),
             request=self._request,
             cmd_options=cmd_options
@@ -87,10 +89,11 @@ class PDFTemplateView(TemplateView):
     # Send file as attachement. If True render content in the browser.
     show_content_in_browser = False
 
-    # Filenames for the content, header, and footer templates.
+    # Filenames for the content, header, footer, and background templates.
     template_name = None
     header_template = None
     footer_template = None
+    background_template = None
 
     # TemplateResponse classes for PDF and HTML
     response_class = PDFTemplateResponse
@@ -146,6 +149,7 @@ class PDFTemplateView(TemplateView):
                 show_content_in_browser=self.show_content_in_browser,
                 header_template=self.header_template,
                 footer_template=self.footer_template,
+                background_template=self.background_template,
                 cmd_options=cmd_options,
                 **response_kwargs
             )

@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import shlex
+from subprocess import check_output, Popen, PIPE
 from tempfile import NamedTemporaryFile
 
 from django.utils.encoding import smart_text
@@ -23,7 +24,6 @@ from django.template import loader
 from django.template.context import Context, RequestContext
 from django.utils import six
 
-from .subprocess import check_output
 
 NO_ARGUMENT_OPTIONS = ['--collate', '--no-collate', '-H', '--extended-help', '-g',
                        '--grayscale', '-h', '--help', '--htmldoc', '--license', '-l',
@@ -68,7 +68,6 @@ def _options_to_args(**options):
             continue
         flags.append(six.text_type(value))
     return flags
-
 
 def wkhtmltopdf(pages, output=None, **kwargs):
     """
@@ -141,7 +140,15 @@ def wkhtmltopdf(pages, output=None, **kwargs):
 
     return check_output(ck_args, **ck_kwargs)
 
-def convert_to_pdf(filename, header_filename=None, footer_filename=None, cmd_options=None):
+def add_background(pages, background, output=None):
+    if output is None:
+        output = '-'
+
+    process = Popen(['pdftk', '-', 'background', background, 'output', output], stdin=PIPE, stdout=PIPE)
+    stdout, stderr = process.communicate(pages)
+    return stdout
+
+def convert_to_pdf(filename, header_filename=None, footer_filename=None, background_filename=None, cmd_options=None):
     # Clobber header_html and footer_html only if filenames are
     # provided. These keys may be in self.cmd_options as hardcoded
     # static files.
@@ -153,7 +160,19 @@ def convert_to_pdf(filename, header_filename=None, footer_filename=None, cmd_opt
         cmd_options['header_html'] = header_filename
     if footer_filename is not None:
         cmd_options['footer_html'] = footer_filename
-    return wkhtmltopdf(pages=filename, **cmd_options)
+    output = wkhtmltopdf(pages=filename, **cmd_options)
+
+    if background_filename is not None:
+        background_options = cmd_options.copy()
+        background_options.pop('header_html', None)
+        background_options.pop('footer_html', None)
+        background_pdf = make_tempfile(
+            content=wkhtmltopdf(pages=background_filename, **background_options),
+            suffix='.pdf'
+        )
+        return add_background(output, background_pdf.name)
+
+    return output
 
 class RenderedFile(object):
     """
@@ -180,12 +199,12 @@ class RenderedFile(object):
         if self.temporary_file is not None:
             self.temporary_file.close()
 
-def render_pdf_from_template(input_template, header_template, footer_template, context, request=None, cmd_options=None):
+def render_pdf_from_template(input_template, header_template, footer_template, background_template, context, request=None, cmd_options=None):
     # For basic usage. Performs all the actions necessary to create a single
     # page PDF from a single template and context.
     cmd_options = cmd_options if cmd_options else {}
 
-    header_filename = footer_filename = None
+    header_filename = footer_filename = background_filename = None
 
     # Main content.
     input_file = RenderedFile(
@@ -212,9 +231,19 @@ def render_pdf_from_template(input_template, header_template, footer_template, c
         )
         footer_filename = footer_file.filename
 
+    # Optional. For background template argument.
+    if background_template:
+        background_file = RenderedFile(
+            template=background_template,
+            context=context,
+            request=request
+        )
+        background_filename = background_file.filename
+
     return convert_to_pdf(filename=input_file.filename,
                           header_filename=header_filename,
                           footer_filename=footer_filename,
+                          background_filename=background_filename,
                           cmd_options=cmd_options)
 
 def content_disposition_filename(filename):
@@ -320,6 +349,26 @@ def render_to_temporary_file(template, context, request=None, mode='w+b',
 
     try:
         tempfile.write(content.encode('utf-8'))
+        tempfile.flush()
+        return tempfile
+    except:
+        # Clean-up tempfile if an Exception is raised.
+        tempfile.close()
+        raise
+
+def make_tempfile(content, mode='w+b', bufsize=-1, suffix='', prefix='tmp', dir=None, delete=True):
+    try:
+        # Python3 has 'buffering' arg instead of 'bufsize'
+        tempfile = NamedTemporaryFile(mode=mode, buffering=bufsize,
+                                      suffix=suffix, prefix=prefix,
+                                      dir=dir, delete=delete)
+    except TypeError:
+        tempfile = NamedTemporaryFile(mode=mode, bufsize=bufsize,
+                                      suffix=suffix, prefix=prefix,
+                                      dir=dir, delete=delete)
+
+    try:
+        tempfile.write(content)
         tempfile.flush()
         return tempfile
     except:
