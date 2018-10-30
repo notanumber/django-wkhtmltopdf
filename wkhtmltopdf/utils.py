@@ -144,7 +144,7 @@ def add_background(pages, background, output=None):
     if output is None:
         output = '-'
 
-    process = Popen(['pdftk', '-', 'background', background, 'output', output], stdin=PIPE, stdout=PIPE)
+    process = Popen(['pdftk', '-', 'background', background, 'output', output], bufsize=-1, stdin=PIPE, stdout=PIPE)
     stdout, stderr = process.communicate(pages)
     return stdout
 
